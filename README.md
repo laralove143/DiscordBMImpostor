@@ -11,7 +11,7 @@ A third party package for [DiscordBM](https://github.com/DiscordBM/DiscordBM) to
 - Change any info about the new message, for example to clone to another channel 
 - [ ] Widely tested with integration tests _(Almost 1:1 LOC for source and tests)_
 - [ ] Clone attachments or stickers by linking to them or re-uploading them
-- [ ] Clone URL components
+- Clone URL components
 - [ ] Clone messages sent after the original message, even combining them to reduce webhook executions
 - [ ] Clone reactions
 - [ ] Clone references by putting an embed
