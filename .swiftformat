@@ -1,0 +1,12 @@
+--markcategories false
+
+--header "\n{file}\nLara Kayaalp\n\nCreated by Lara Kayaalp on {created}.\n"
+
+--enable \
+    blankLineAfterImports, \
+    blankLinesBetweenChainedFunctions, \
+    blankLinesBetweenImports, \
+    blockComments, \
+    docComments, \
+    isEmpty, \
+    sortSwitchCases
