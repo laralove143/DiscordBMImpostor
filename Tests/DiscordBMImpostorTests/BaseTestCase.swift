@@ -7,8 +7,9 @@ import XCTest
 
 // swiftlint:disable test_case_accessibility
 class BaseTestCase: XCTestCase {
-    var channelId: ChannelSnowflake!
     var token: String!
+    var channelId: ChannelSnowflake!
+    var forumChannelId: ChannelSnowflake!
 
     var bot: BotGatewayManager!
     var cache: DiscordCache!
@@ -16,7 +17,7 @@ class BaseTestCase: XCTestCase {
     var events: AsyncStream<Gateway.Event>!
 
     override func setUp() async throws {
-        if channelId == nil || token == nil {
+        if token == nil || channelId == nil || forumChannelId == nil {
             let dotEnvFileURL = URL(filePath: #file)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -29,8 +30,9 @@ class BaseTestCase: XCTestCase {
                 print("not using .env file: \(error)")
             }
 
-            channelId = ChannelSnowflake(ProcessInfo.processInfo.environment["CHANNEL_ID"]!)
             token = ProcessInfo.processInfo.environment["TOKEN"]!
+            channelId = ChannelSnowflake(ProcessInfo.processInfo.environment["CHANNEL_ID"]!)
+            forumChannelId = ChannelSnowflake(ProcessInfo.processInfo.environment["FORUM_CHANNEL_ID"]!)
         }
 
         let http = HTTPClient(eventLoopGroupProvider: .singleton)
@@ -58,8 +60,12 @@ class BaseTestCase: XCTestCase {
         cache = nil
     }
 
-    func createMessage(_ messagePayload: Payloads.CreateMessage) async throws -> Gateway.MessageCreate {
-        let message = try await bot.client.createMessage(channelId: channelId, payload: messagePayload).decode()
+    func createMessage(
+        _ messagePayload: Payloads.CreateMessage, channelId: ChannelSnowflake? = nil
+    ) async throws -> Gateway.MessageCreate {
+        let finalChannelId = channelId ?? self.channelId!
+
+        let message = try await bot.client.createMessage(channelId: finalChannelId, payload: messagePayload).decode()
 
         for await event in events {
             if case let .messageCreate(messageCreate) = event.data, messageCreate.id == message.id {
@@ -72,6 +78,10 @@ class BaseTestCase: XCTestCase {
 
     func sourceMessage(from message: Gateway.MessageCreate) async throws -> SourceMessage {
         try await SourceMessage(message: message, bot: bot, cache: cache)
+    }
+
+    func sourceMessage(messageId: MessageSnowflake, channelId: ChannelSnowflake) async throws -> SourceMessage {
+        try await SourceMessage(messageId: messageId, channelId: channelId, bot: bot, cache: cache)
     }
 }
 // swiftlint:enable test_case_accessibility

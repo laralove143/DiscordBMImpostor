@@ -1,6 +1,5 @@
 import AsyncHTTPClient
 import DiscordBM
-import DotEnv
 
 /// A message that can be cloned.
 ///
@@ -17,8 +16,10 @@ import DotEnv
 /// Required permissions in all channels:
 /// - `VIEW_CHANNEL`
 /// - `MANAGE_WEBHOOKS`
+/// - `MANAGE_THREADS`
 ///
 /// Required intents:
+/// - `GUILDS`
 /// - `GUILD_MESSAGES`
 /// - `MESSAGE_CONTENT`
 ///
@@ -39,6 +40,7 @@ public struct SourceMessage {
     let bot: BotGatewayManager
     let webhook: WebhookAddress
     let cache: DiscordCache
+    var threadId: ChannelSnowflake?
     let author: DiscordUser
     let member: Guild.PartialMember
     let guildId: GuildSnowflake
@@ -59,6 +61,12 @@ public struct SourceMessage {
         self.member = try message.member.requireValue()
         self.guildId = try message.guild_id.requireValue()
 
+        var channelId = message.channel_id
+        if let thread = try await cache.guilds[guildId].requireValue().threads.first(where: { $0.id == channelId }) {
+            self.threadId = thread.id
+            channelId = try Snowflake(thread.parent_id.requireValue())
+        }
+
         let webhook = try await {
             if let webhook = try await bot.client.listChannelWebhooks(channelId: message.channel_id).decode().first(
                 where: { $0.token != nil && $0.name == webhookName }
@@ -72,7 +80,6 @@ public struct SourceMessage {
             )
             .decode()
         }()
-
         self.webhook = try WebhookAddress.deconstructed(id: webhook.id, token: webhook.token.requireValue())
     }
 
@@ -106,9 +113,10 @@ public struct SourceMessage {
 
         try await bot.client.executeWebhook(
             address: webhook,
+            threadId: threadId,
             payload: Payloads.ExecuteWebhook(
                 content: message.content,
-                username: message.member?.nick ?? author.username,
+                username: member.nick ?? author.username,
                 avatar_url: avatarURL(),
                 tts: message.tts,
                 embeds: message.embeds,

@@ -1,15 +1,8 @@
-import Collections
 import DiscordBM
 import DiscordBMImpostor
 import XCTest
 
-class SourceMessageTests: BaseTestCase {
-    func testBasic() async throws {
-        let message = try await createMessage(.init(content: "basic message"))
-
-        try await sourceMessage(from: message).create()
-    }
-
+class AvatarTests: BaseTestCase {
     func testDefaultAvatar() async throws {
         var message = try await createMessage(.init(content: "default avatar"))
 
@@ -62,14 +55,6 @@ class SourceMessageTests: BaseTestCase {
         var message = try await createMessage(.init(content: "guild avatar *(should be bot owner's guild avatar)*"))
         message.author!.id = owner.id
         message.member!.avatar = avatar
-
-        try await sourceMessage(from: message).create()
-    }
-
-    func testComponent() async throws {
-        let message = try await createMessage(
-            .init(components: [.init(arrayLiteral: .button(.init(label: "wöæo", url: "https://youtu.be/jPx_ZWKYRCE")))])
-        )
 
         try await sourceMessage(from: message).create()
     }
