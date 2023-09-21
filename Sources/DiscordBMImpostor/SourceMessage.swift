@@ -76,7 +76,7 @@ public struct SourceMessage {
     ///
     /// ## Message References
     ///
-    /// If `ignoreReferencedMessage` is `false` and the message has less than 20 embeds, an embed showing the referenced
+    /// If `ignoreReferencedMessage` is `false` and the message has less than 10 embeds, an embed showing the referenced
     /// message is added to the cloned message.
     ///
     /// The content of the embed is as follows:
@@ -177,8 +177,9 @@ public struct SourceMessage {
 
     mutating func addReferencedMessageEmbed() throws {
         let contentTruncateCount = 20
+        let maxEmbedCount = 10
 
-        guard let referencedMessageBox = message.referenced_message else {
+        guard let referencedMessageBox = message.referenced_message, message.embeds.count < maxEmbedCount else {
             return
         }
         let referencedMessage = referencedMessageBox.value
