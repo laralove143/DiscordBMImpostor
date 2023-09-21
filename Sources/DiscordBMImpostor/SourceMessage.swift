@@ -1,5 +1,8 @@
 import AsyncHTTPClient
 import DiscordBM
+import Foundation
+
+// TODO: Change Id to ID
 
 /// A message that can be cloned.
 ///
@@ -28,6 +31,24 @@ import DiscordBM
 /// Many of the fields here are stateful, there are no guarantees on validity since this doesn't have access to the
 /// gateway, this means you should use and drop this struct as fast as you can.
 public struct SourceMessage {
+    /// Defines how to get the message
+    public enum MessageProvider {
+        /// Get the message from the cache
+        case fromCache(messageID: MessageSnowflake, channelID: ChannelSnowflake)
+        /// Use the provided message
+        case given(message: Gateway.MessageCreate)
+
+        func resolve(cache: DiscordCache) async throws -> Gateway.MessageCreate {
+            switch self {
+            case let .fromCache(messageID, channelID):
+                return try await cache.messages[channelID].requireValue().first { $0.id == messageID }.requireValue()
+
+            case .given(let message):
+                return message
+            }
+        }
+    }
+
     /// The message that will be cloned.
     ///
     /// ## Mutation
@@ -36,7 +57,7 @@ public struct SourceMessage {
     ///
     /// Since most methods mutate the source, you should mutate the message right before calling
     /// ``SourceMessage/create()``.
-    public let message: Gateway.MessageCreate
+    public var message: Gateway.MessageCreate
     let bot: BotGatewayManager
     let webhook: WebhookAddress
     let cache: DiscordCache
@@ -45,18 +66,36 @@ public struct SourceMessage {
     let member: Guild.PartialMember
     let guildId: GuildSnowflake
 
+    var username: String {
+        member.nick ?? author.username
+    }
+
     /// Use the provided message and to initialize this.
     ///
     /// If a webhook called the given name in the channel doesn't exist, creates it.
+    ///
+    /// ## Message References
+    ///
+    /// If `ignoreReferencedMessage` is `false` and the message has less than 20 embeds, an embed showing the referenced
+    /// message is added to the cloned message.
+    ///
+    /// The content of the embed is as follows:
+    /// - Title: Reply to
+    /// - Description: First 20 characters of the message, "..." is added if it was truncated
+    /// - URL: The referenced message's URL
+    /// - Author: The name and avatar of the referenced message's author
+    ///
+    /// You can mutate the last embed in the message to adjust it to your specific needs.
     public init(
-        message: Gateway.MessageCreate,
+        message messageProvider: MessageProvider,
         bot: BotGatewayManager,
         cache: DiscordCache,
-        webhookName: String = "Message Cloner"
+        webhookName: String = "Message Cloner",
+        ignoreReferencedMessage: Bool = false
     ) async throws {
         self.bot = bot
         self.cache = cache
-        self.message = message
+        self.message = try await messageProvider.resolve(cache: cache)
         self.author = try message.author.requireValue()
         self.member = try message.member.requireValue()
         self.guildId = try message.guild_id.requireValue()
@@ -67,35 +106,22 @@ public struct SourceMessage {
             channelId = try Snowflake(thread.parent_id.requireValue())
         }
 
-        let webhook = try await {
-            if let webhook = try await bot.client.listChannelWebhooks(channelId: message.channel_id).decode().first(
-                where: { $0.token != nil && $0.name == webhookName }
-            ) {
-                return webhook
-            }
-
-            return try await bot.client.createWebhook(
+        if let foundWebhook = try await bot.client.listChannelWebhooks(channelId: message.channel_id).decode().first(
+            where: { $0.token != nil && $0.name == webhookName }
+        ) {
+            webhook = try foundWebhook.address()
+        } else {
+            webhook = try await bot.client.createWebhook(
                 channelId: message.channel_id,
                 payload: Payloads.CreateWebhook(name: webhookName)
             )
             .decode()
-        }()
-        self.webhook = try WebhookAddress.deconstructed(id: webhook.id, token: webhook.token.requireValue())
-    }
+            .address()
+        }
 
-    /// Get the message from the cache and initialize this.
-    ///
-    /// If a webhook called the given name in the channel doesn't exist, creates it.
-    public init(
-        messageId: MessageSnowflake,
-        channelId: ChannelSnowflake,
-        bot: BotGatewayManager,
-        cache: DiscordCache,
-        webhookName: String = "Message Cloner"
-    ) async throws {
-        let message = try await cache.messages[channelId].requireValue().first { $0.id == messageId }.requireValue()
-
-        try await self.init(message: message, bot: bot, cache: cache, webhookName: webhookName)
+        if !ignoreReferencedMessage {
+            try addReferencedMessageEmbed()
+        }
     }
 
     /// Execute a webhook using the given source.
@@ -116,7 +142,7 @@ public struct SourceMessage {
             threadId: threadId,
             payload: Payloads.ExecuteWebhook(
                 content: message.content,
-                username: member.nick ?? author.username,
+                username: username,
                 avatar_url: avatarURL(),
                 tts: message.tts,
                 embeds: message.embeds,
@@ -125,6 +151,10 @@ public struct SourceMessage {
             )
         )
         .guardSuccess()
+    }
+
+    func avatarURL() -> String {
+        DiscordBMImpostor.avatarURL(member: member, user: author, guildId: guildId)
     }
 
     func containsInvalidComponent() -> Bool {
@@ -145,15 +175,36 @@ public struct SourceMessage {
         return false
     }
 
-    func avatarURL() throws -> String {
-        if let memberAvatar = member.avatar {
-            return CDNEndpoint.guildMemberAvatar(guildId: guildId, userId: author.id, avatar: memberAvatar).url
+    mutating func addReferencedMessageEmbed() throws {
+        let contentTruncateCount = 20
+
+        guard let referencedMessageBox = message.referenced_message else {
+            return
+        }
+        let referencedMessage = referencedMessageBox.value
+
+        var content = String(referencedMessage.content.prefix(contentTruncateCount))
+        if referencedMessage.content.count > contentTruncateCount {
+            content += "..."
         }
 
-        if let userAvatar = author.avatar {
-            return CDNEndpoint.userAvatar(userId: author.id, avatar: userAvatar).url
-        }
+        let avatarURL = DiscordBMImpostor.avatarURL(
+            member: try message.member.requireValue(), user: try message.author.requireValue(), guildId: guildId
+        )
 
-        return CDNEndpoint.defaultUserAvatar(discriminator: author.discriminator).url
+        let messageURL = URL(string: "https://discord.com/channels")?
+            .appendingPathComponent(guildId.rawValue)
+            .appendingPathComponent(referencedMessage.channel_id.rawValue)
+            .appendingPathComponent(referencedMessage.id.rawValue)
+            .absoluteString
+
+        let embed = Embed(
+            title: "Reply to",
+            description: content,
+            url: messageURL,
+            author: .init(name: username, icon_url: .exact(avatarURL))
+        )
+
+        message.embeds.append(embed)
     }
 }

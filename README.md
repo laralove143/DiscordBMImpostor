@@ -13,7 +13,7 @@ A third party package for [DiscordBM](https://github.com/DiscordBM/DiscordBM) to
 - Clone URL components
 - [ ] Clone messages sent after the original message, even combining them to reduce webhook executions
 - [ ] Clone reactions
-- [ ] Clone references by putting an embed
+- Clone references by putting an embed
 - Clone messages in a thread/forum post or messages used to start a thread/forum post
 - [ ] Sanitize invalid usernames
 - [ ] Delete the original message and messages sent after

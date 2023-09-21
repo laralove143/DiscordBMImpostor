@@ -9,13 +9,13 @@ class AvatarTests: BaseTestCase {
         message.member?.avatar = nil
         message.author?.avatar = nil
 
-        try await sourceMessage(from: message).create()
+        try await sourceMessage(message: .given(message: message)).create()
     }
 
     func testAvatar() async throws {
         let message = try await createMessage(.init(content: "avatar"))
 
-        try await sourceMessage(from: message).create()
+        try await sourceMessage(message: .given(message: message)).create()
     }
 
     func testAnimatedAvatar() async throws {
@@ -33,7 +33,7 @@ class AvatarTests: BaseTestCase {
         message.author!.id = owner.id
         message.author!.avatar = avatar
 
-        try await sourceMessage(from: message).create()
+        try await sourceMessage(message: .given(message: message)).create()
     }
 
     func testGuildAvatar() async throws {
@@ -56,6 +56,6 @@ class AvatarTests: BaseTestCase {
         message.author!.id = owner.id
         message.member!.avatar = avatar
 
-        try await sourceMessage(from: message).create()
+        try await sourceMessage(message: .given(message: message)).create()
     }
 }

@@ -10,7 +10,7 @@ class ThreadTests: BaseTestCase {
 
         let message = try await createMessage(.init(content: "thread"), channelId: thread.id)
 
-        try await sourceMessage(messageId: message.id, channelId: message.channel_id).create()
+        try await sourceMessage(message: .fromCache(messageID: message.id, channelID: message.channel_id)).create()
     }
 
     func testPost() async throws {
@@ -19,6 +19,9 @@ class ThreadTests: BaseTestCase {
         )
         .decode()
 
-        try await sourceMessage(messageId: Snowflake(thread.id), channelId: Snowflake(thread.id)).create()
+        try await sourceMessage(
+            message: .fromCache(messageID: Snowflake(thread.id), channelID: Snowflake(thread.id))
+        )
+        .create()
     }
 }

@@ -76,12 +76,8 @@ class BaseTestCase: XCTestCase {
         fatalError("events exhausted")
     }
 
-    func sourceMessage(from message: Gateway.MessageCreate) async throws -> SourceMessage {
+    func sourceMessage(message: SourceMessage.MessageProvider) async throws -> SourceMessage {
         try await SourceMessage(message: message, bot: bot, cache: cache)
-    }
-
-    func sourceMessage(messageId: MessageSnowflake, channelId: ChannelSnowflake) async throws -> SourceMessage {
-        try await SourceMessage(messageId: messageId, channelId: channelId, bot: bot, cache: cache)
     }
 }
 // swiftlint:enable test_case_accessibility
