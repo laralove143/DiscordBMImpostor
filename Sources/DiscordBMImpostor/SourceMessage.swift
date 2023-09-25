@@ -2,7 +2,8 @@ import AsyncHTTPClient
 import DiscordBM
 import Foundation
 
-// TODO: Change Id to ID
+// TODO: Change ID to Id
+// TODO: Check for unnecessary self.
 
 /// A message that can be cloned.
 ///
@@ -58,17 +59,10 @@ public struct SourceMessage {
     /// Since most methods mutate the source, you should mutate the message right before calling
     /// ``SourceMessage/create()``.
     public var message: Gateway.MessageCreate
+
     let bot: BotGatewayManager
     let webhook: WebhookAddress
     let cache: DiscordCache
-    var threadId: ChannelSnowflake?
-    let author: DiscordUser
-    let member: Guild.PartialMember
-    let guildId: GuildSnowflake
-
-    var username: String {
-        member.nick ?? author.username
-    }
 
     /// Use the provided message and to initialize this.
     ///
@@ -76,8 +70,8 @@ public struct SourceMessage {
     ///
     /// ## Message References
     ///
-    /// If `ignoreReferencedMessage` is `false` and the message has less than 10 embeds, an embed showing the referenced
-    /// message is added to the cloned message.
+    /// If `ignoreReferencedMessage` is `false`, the message has less than 10 embeds and the message is cached, an
+    /// embed showing the referenced message is added to the cloned message.
     ///
     /// The content of the embed is as follows:
     /// - Title: Reply to
@@ -95,32 +89,16 @@ public struct SourceMessage {
     ) async throws {
         self.bot = bot
         self.cache = cache
-        self.message = try await messageProvider.resolve(cache: cache)
-        self.author = try message.author.requireValue()
-        self.member = try message.member.requireValue()
-        self.guildId = try message.guild_id.requireValue()
 
-        var channelId = message.channel_id
-        if let thread = try await cache.guilds[guildId].requireValue().threads.first(where: { $0.id == channelId }) {
-            self.threadId = thread.id
-            channelId = try Snowflake(thread.parent_id.requireValue())
-        }
+        message = try await messageProvider.resolve(cache: cache)
 
-        if let foundWebhook = try await bot.client.listChannelWebhooks(channelId: message.channel_id).decode().first(
-            where: { $0.token != nil && $0.name == webhookName }
-        ) {
-            webhook = try foundWebhook.address()
-        } else {
-            webhook = try await bot.client.createWebhook(
-                channelId: message.channel_id,
-                payload: Payloads.CreateWebhook(name: webhookName)
-            )
-            .decode()
-            .address()
-        }
+        webhook = try await bot.client.findOrCreateWebhook(
+            channelID: try await message.threadParentId(cache: cache) ?? message.channel_id, name: webhookName
+        )
+        .address()
 
         if !ignoreReferencedMessage {
-            try addReferencedMessageEmbed()
+            try await message.addReferencedMessageEmbed(cache: cache)
         }
     }
 
@@ -133,17 +111,17 @@ public struct SourceMessage {
     ///
     /// - Throws: ``DiscordBMImpostorError/invalidComponent`` if the message has a non-link component
     public func create() async throws {
-        guard !containsInvalidComponent() else {
+        guard message.componentsAreOnlyURL() else {
             throw DiscordBMImpostorError.invalidComponent
         }
 
         try await bot.client.executeWebhook(
             address: webhook,
-            threadId: threadId,
+            threadId: message.threadParentId(cache: cache) != nil ? message.channel_id : nil,
             payload: Payloads.ExecuteWebhook(
                 content: message.content,
-                username: username,
-                avatar_url: avatarURL(),
+                username: message.sanitizedNameForWebhook(),
+                avatar_url: message.avatarURL(),
                 tts: message.tts,
                 embeds: message.embeds,
                 components: message.components,
@@ -151,61 +129,5 @@ public struct SourceMessage {
             )
         )
         .guardSuccess()
-    }
-
-    func avatarURL() -> String {
-        DiscordBMImpostor.avatarURL(member: member, user: author, guildId: guildId)
-    }
-
-    func containsInvalidComponent() -> Bool {
-        if let actionRows = message.components {
-            for actionRow in actionRows {
-                for component in actionRow.components {
-                    if case let .button(button) = component {
-                        if button.url == nil {
-                            return true
-                        }
-                    } else {
-                        return true
-                    }
-                }
-            }
-        }
-
-        return false
-    }
-
-    mutating func addReferencedMessageEmbed() throws {
-        let contentTruncateCount = 20
-        let maxEmbedCount = 10
-
-        guard let referencedMessageBox = message.referenced_message, message.embeds.count < maxEmbedCount else {
-            return
-        }
-        let referencedMessage = referencedMessageBox.value
-
-        var content = String(referencedMessage.content.prefix(contentTruncateCount))
-        if referencedMessage.content.count > contentTruncateCount {
-            content += "..."
-        }
-
-        let avatarURL = DiscordBMImpostor.avatarURL(
-            member: try message.member.requireValue(), user: try message.author.requireValue(), guildId: guildId
-        )
-
-        let messageURL = URL(string: "https://discord.com/channels")?
-            .appendingPathComponent(guildId.rawValue)
-            .appendingPathComponent(referencedMessage.channel_id.rawValue)
-            .appendingPathComponent(referencedMessage.id.rawValue)
-            .absoluteString
-
-        let embed = Embed(
-            title: "Reply to",
-            description: content,
-            url: messageURL,
-            author: .init(name: username, icon_url: .exact(avatarURL))
-        )
-
-        message.embeds.append(embed)
     }
 }
